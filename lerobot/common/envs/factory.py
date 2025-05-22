@@ -18,6 +18,11 @@ import importlib
 import gymnasium as gym
 
 from lerobot.common.envs.configs import AlohaEnv, EnvConfig, PushtEnv, XarmEnv
+# Import NewRobot and NewRobotConfig as requested by the subtask
+# Although this factory (make_env_config, make_env) deals with Environment configurations and instances,
+# not directly with RobotDevice configurations and instances.
+# Robot instantiation is handled in lerobot.common.robot_devices.robots.utils.py
+from lerobot.common.robot_devices.robots import NewRobot, NewRobotConfig
 
 
 def make_env_config(env_type: str, **kwargs) -> EnvConfig:

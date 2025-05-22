@@ -21,6 +21,7 @@ from lerobot.common.robot_devices.robots.configs import (
     LeKiwiRobotConfig,
     ManipulatorRobotConfig,
     MossRobotConfig,
+    NewRobotConfig,
     RobotConfig,
     So100RobotConfig,
     So101RobotConfig,
@@ -65,15 +66,51 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
         return StretchRobotConfig(**kwargs)
     elif robot_type == "lekiwi":
         return LeKiwiRobotConfig(**kwargs)
+    elif robot_type == "new_robot":
+        return NewRobotConfig(**kwargs)
     else:
         raise ValueError(f"Robot type '{robot_type}' is not available.")
 
 
 def make_robot_from_config(config: RobotConfig):
+    # NewRobot is a ManipulatorRobot, and NewRobotConfig is a ManipulatorRobotConfig.
+    # So, the existing ManipulatorRobot block will handle NewRobot.
+    # If NewRobot required specific instantiation logic different from ManipulatorRobot,
+    # an explicit check would be:
+    # elif isinstance(config, NewRobotConfig):
+    #     from lerobot.common.robot_devices.robots.new_robot import NewRobot
+    #     return NewRobot(config)
     if isinstance(config, ManipulatorRobotConfig):
-        from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
-
-        return ManipulatorRobot(config)
+        # This will also correctly instantiate NewRobot if config is NewRobotConfig,
+        # because NewRobot is a subclass of ManipulatorRobot.
+        # To be more specific and future-proof for NewRobot specific logic,
+        # one could add a dedicated block as commented out above.
+        # However, if NewRobot is intended to be created just like any other ManipulatorRobot,
+        # this is fine.
+        # Let's import the specific robot class based on the config type if possible,
+        # falling back to ManipulatorRobot for generic manipulator configs.
+        if isinstance(config, AlohaRobotConfig):
+            from lerobot.common.robot_devices.robots.aloha.aloha_robot import AlohaRobot
+            return AlohaRobot(config)
+        elif isinstance(config, KochRobotConfig) or isinstance(config, KochBimanualRobotConfig):
+            from lerobot.common.robot_devices.robots.koch.koch_robot import KochRobot
+            return KochRobot(config)
+        elif isinstance(config, MossRobotConfig):
+            from lerobot.common.robot_devices.robots.moss.moss_robot import MossRobot
+            return MossRobot(config)
+        elif isinstance(config, So100RobotConfig):
+            from lerobot.common.robot_devices.robots.so100.so100_robot import So100Robot
+            return So100Robot(config)
+        elif isinstance(config, So101RobotConfig):
+            from lerobot.common.robot_devices.robots.so101.so101_robot import So101Robot
+            return So101Robot(config)
+        elif isinstance(config, NewRobotConfig): # Explicitly handle NewRobotConfig
+            from lerobot.common.robot_devices.robots.new_robot import NewRobot
+            return NewRobot(config)
+        else:
+            # Fallback for other ManipulatorRobotConfig types if any
+            from lerobot.common.robot_devices.robots.manipulator import ManipulatorRobot
+            return ManipulatorRobot(config)
     elif isinstance(config, LeKiwiRobotConfig):
         from lerobot.common.robot_devices.robots.mobile_manipulator import MobileManipulator
 

@@ -81,6 +81,15 @@ class ManipulatorRobotConfig(RobotConfig):
                     )
 
 
+@RobotConfig.register_subclass("new_robot")
+@dataclass
+class NewRobotConfig(ManipulatorRobotConfig):
+    """Configuration for NewRobot."""
+
+    type: str = "new_robot"
+    calibration_dir: str = "~/.cache/lerobot/calibration/new_robot/"
+
+
 @RobotConfig.register_subclass("aloha")
 @dataclass
 class AlohaRobotConfig(ManipulatorRobotConfig):

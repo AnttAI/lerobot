@@ -368,3 +368,43 @@ python lerobot/scripts/control_robot.py \
 As you can see, it's almost the same command as previously used to record your training dataset. Two things changed:
 1. There is an additional `--control.policy.path` argument which indicates the path to your policy checkpoint with  (e.g. `outputs/train/eval_act_so101_test/checkpoints/last/pretrained_model`). You can also use the model repository if you uploaded a model checkpoint to the hub (e.g. `${HF_USER}/act_so101_test`).
 2. The name of dataset begins by `eval` to reflect that you are running inference (e.g. `${HF_USER}/eval_act_so101_test`).
+
+## Adding a Custom Robot (e.g., `NewRobot` Template)
+
+While this tutorial focuses on the SO-101 robot, LeRobot is designed to be extensible to other robots. To facilitate the integration of new robots, a template called `NewRobot` is provided.
+
+`NewRobot` serves as a boilerplate implementation, demonstrating the basic structure and required methods for a robot class within LeRobot. It includes:
+- A robot class `NewRobot` in `lerobot.common.robot_devices.robots.new_robot.py`.
+- A configuration class `NewRobotConfig` in `lerobot.common.robot_devices.robots.configs.py`.
+- A placeholder calibration function `run_new_robot_calibration` in `lerobot.common.robot_devices.robots.new_robot_calibration.py`.
+
+These components are minimally implemented with `NotImplementedError` placeholders, guiding you on where to add your robot-specific logic.
+
+For a detailed guide on how to use `NewRobot` as a starting point, including code examples and explanations of its placeholder methods, please refer to the [Get started with NewRobot example documentation](./examples/13_use_new_robot.md).
+
+### General Steps for Custom Robot Integration
+
+Integrating a new, custom robot into LeRobot generally involves the following steps, using `NewRobot` and `NewRobotConfig` as references:
+
+1.  **Create a Robot Class**:
+    *   Define your robot's class, inheriting from `Robot` or an appropriate subclass like `ManipulatorRobot`.
+    *   Implement methods such as `connect`, `disconnect`, `capture_observation`, `send_action`, `teleop_step`, etc., with your robot's specific SDK and hardware communication logic.
+    *   You can copy `lerobot/common/robot_devices/robots/new_robot.py` and modify it for your hardware.
+
+2.  **Create a Configuration Class**:
+    *   Define a corresponding configuration dataclass for your robot, inheriting from `RobotConfig` or `ManipulatorRobotConfig`.
+    *   Register your config using `@RobotConfig.register_subclass("your_robot_type_name")`.
+    *   Include parameters specific to your robot (e.g., connection ports, motor IDs, camera serial numbers, calibration file paths).
+    *   You can copy `NewRobotConfig` from `lerobot/common/robot_devices/robots/configs.py` and adapt it.
+
+3.  **Implement Calibration Procedure**:
+    *   Develop a calibration routine specific to your robot (e.g., for joint encoder offsets, camera intrinsics/extrinsics).
+    *   This function should be called appropriately, often during the `connect` sequence.
+    *   The `lerobot/common/robot_devices/robots/new_robot_calibration.py` provides a template structure.
+
+4.  **Update Factory Functions**:
+    *   Add your new robot type and configuration to the factory functions in `lerobot/common/robot_devices/robots/utils.py`:
+        *   Update `make_robot_config` to recognize your robot's type string and return an instance of your robot's configuration class.
+        *   Update `make_robot_from_config` to instantiate your robot class when its configuration object is provided.
+
+By following these steps and referring to the `NewRobot` example, you can integrate diverse robots into the LeRobot framework.
