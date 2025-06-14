@@ -180,7 +180,7 @@ def plot_bounding_boxes(im: Image.Image, bounding_boxes_json_str: str, output_pa
 
     # Print the absolute bounding boxes as JSON for programmatic use/logging
     print("INFO: Absolute Bounding Boxes (JSON):")
-    print(json.dumps(absolute_boxes, indent=2))
+    print(json.dumps(absolute_boxes))    
 
 
 #analyze_image_with_gemini("/home/jony/Downloads/frame_00000.png", "What do you see?") # Example usage
