@@ -1,11 +1,17 @@
 import signal
+import time
 import json
 import io
 import sys
 import torch
 import numpy as np
 from PIL import Image
+import google.genai.types as types
 from google.adk.agents import Agent
+from google.adk.runners import Runner
+from google.adk.artifacts import InMemoryArtifactService 
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools.tool_context import ToolContext
 import examples.teleoperate_so101 as teleoperate_so101
 import examples.gemini_2 as gemini_2
 from examples.gemini_2 import analyze_image_with_gemini, parse_json
@@ -37,7 +43,7 @@ def get_current_inventory() -> dict:
         if "head" not in observation:
             return {"status": "error", "error_message": "No head camera image found."}
 
-        image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])
+        image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])       
         prompt = "Identify and list all objects in this inventory image. Return only the object labels."
         response = analyze_image_with_gemini(image_bytes, prompt)
 
@@ -53,7 +59,7 @@ def get_current_inventory() -> dict:
         return {"status": "error", "error_message": str(e)}
 
 
-def pick_item(item: str) -> dict:
+async def pick_item(item: str, tool_context: ToolContext) -> dict:
    """Robot pick up the item and put in tray for pickup."""
    
    if policy:
@@ -83,9 +89,23 @@ def pick_item(item: str) -> dict:
         
         print(action_array)
         robot.send_action(action)
+        observation = robot.get_observation()
+        image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])
+        image_artifact = types.Part(
+            inline_data=types.Blob(
+                mime_type="image/png",
+                data=image_bytes
+            )
+        )
+        version = await tool_context.save_artifact(filename="inventory.png", artifact=image_artifact)
+        print(f"INFO: Inventory image saved with version: {version}")
         return {"status": "success", "action_values": "dummy"}
    else:
         return {"status": "error", "error_message": "No policy loaded."}
+
+   
+        
+   
 
 def handoff_to_teleoperator(item: str) -> dict:
     """If Robot is unbale to pick up the item, this will handoff the customer requests to leleoperator to control robot and pick the item.
@@ -97,27 +117,40 @@ def handoff_to_teleoperator(item: str) -> dict:
         dict: status and result or error msg.
     """
     # send commadn to robot to pick item.
-    task_done = True
-    if task_done:
-        return {"status": "success"}
-    else:
-        return {
-            "status": "error",
-            "error_message": (
-                f"Sorry, Couldn't complete pick."
-            ),
-        }
+    fps = 30
+    duration = 30 # Frames per second for manual teleoperation
+    print("Entering manual teleop loop...")
+    start = time.perf_counter()
+    while True:
+        action = teleop_device.get_action()
+        print(f"[MANUAL] Action received: {action}")
+        #robot.send_action(action)
 
+        loop_time = time.perf_counter() - start
+        print(f"[MANUAL] Sent zero action at {loop_time:.2f}s")
+
+        if duration and time.perf_counter() - start >= duration:
+            break
+    time.sleep(1 / fps)
+
+    return {"status": "success", "action_values": "dummy"}
+    
+    
 # initialize the robot
 robot = teleoperate_so101.robot
 policy = teleoperate_so101.policy 
+teleop_device = teleoperate_so101.teleop_device
+
+artifact_service = InMemoryArtifactService()
+session_service = InMemorySessionService()
+
+
+
 
 
 root_agent = Agent(
     name="robot_store",
-    model="" \
-    "" \
-    "",
+    model="gemini-2.0-flash",
     description=(
         "Agent to act as shop keeper, the shop has mobile robot, Agent handles the customer request and sends command to robot ."
     ),
@@ -127,4 +160,11 @@ root_agent = Agent(
         "If you are not sure about the item, ask customer for more details. If you are not able to understand the request, ask customer to rephrase the request."
     ),
     tools=[get_current_inventory, pick_item, handoff_to_teleoperator],
+)
+
+runner = Runner(
+    agent=root_agent,
+    app_name="my_artifact_app",
+    session_service=session_service,
+    artifact_service=artifact_service # Provide the service instance here
 )
