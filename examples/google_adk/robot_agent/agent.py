@@ -19,6 +19,7 @@ import atexit
 from lerobot.common.utils.utils import (
     get_safe_torch_device,)
 from lerobot.common.utils.control_utils import predict_action
+from examples import groot_eval_lerobot
 
 def cleanup_and_exit(signum=None, frame=None):
     print("\n[INFO] Disconnecting robot before exit...")
@@ -44,7 +45,7 @@ def get_current_inventory() -> dict:
             return {"status": "error", "error_message": "No head camera image found."}
 
         image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])       
-        prompt = "Identify and list all objects in this inventory image. Return only the object labels."
+        prompt = "Identify and list all objects in this inventory image that out side the plate. Return only the object labels."
         response = analyze_image_with_gemini(image_bytes, prompt)
 
         try:
@@ -63,32 +64,60 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
    """Robot pick up the item and put in tray for pickup."""
    
    if policy:
-        observation = robot.get_observation()
-        observation_frame = teleoperate_so101.build_dataset_frame(
-            teleoperate_so101.dataset_features, observation, prefix="observation"
-        )
-        print("Observation frame:", observation_frame)
-
-        action_values = predict_action(
-            observation_frame,
-            policy,
-            get_safe_torch_device(policy.config.device),
-            policy.config.use_amp,
-            task=teleoperate_so101.single_task,
-            robot_type=robot.robot_type,
-        )
-        print("Action values:", action_values)
-        action = {'shoulder_pan.pos': 100, 
-            'shoulder_lift.pos': -99, 
-            'elbow_flex.pos': 99, 
-            'wrist_flex.pos': 94, 
-            'wrist_roll.pos': 0.3, 
-            'gripper.pos': 0.1}
-
-        action_array = action_values.cpu().numpy()
         
-        print(action_array)
-        robot.send_action(action)
+        duration = 15 
+        start = time.perf_counter()
+        while True:
+            observation = robot.get_observation()
+            observation_frame = teleoperate_so101.build_dataset_frame(
+            teleoperate_so101.dataset_features, observation, prefix="observation"
+            )
+            print("Observation frame:", observation_frame.keys())
+            #action_values_from_groot = groot_eval_lerobot.eval(observation_frame)
+            #action_from_groot = {key: action_values_from_groot[0][i].item() for i, key in enumerate(robot.action_features)}
+            #print("Action from Groot values:", action_values_from_groot[0])
+
+            action_values = predict_action(
+                observation_frame,
+                policy,
+                get_safe_torch_device(policy.config.device),
+                policy.config.use_amp,
+                task=teleoperate_so101.single_task,
+                robot_type=robot.robot_type,
+            )
+            print("Action values:", action_values)
+            action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+            print("Action values: sent to robot", action)
+            
+            
+            
+
+            #action_array = action_values.cpu().numpy()
+        
+            #print(action_array)
+
+            robot.send_action(action)
+
+            loop_time = time.perf_counter() - start
+            print(f"Policry running at action at {loop_time:.2f}s")
+
+            if duration and time.perf_counter() - start >= duration:
+                break
+            time.sleep(1/10)
+
+   
+        
+
+        
+        #action = {'shoulder_pan.pos': 100, 
+        #    'shoulder_lift.pos': -99, 
+        #   'elbow_flex.pos': 99, 
+        #    'wrist_flex.pos': 94, 
+        #    'wrist_roll.pos': 0.3, 
+        #    'gripper.pos': 0.1}
+
+        
+        #robot.send_action(action)
         observation = robot.get_observation()
         image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])
         image_artifact = types.Part(
@@ -103,11 +132,67 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
    else:
         return {"status": "error", "error_message": "No policy loaded."}
 
+
+async def ask_groot_to_pick_item(item: str, tool_context: ToolContext) -> dict:
+   """Groot Robot pick up the item and put in tray for pickup."""
    
+   if policy:
+        
+        duration = 15 
+        start = time.perf_counter()
+        while True:
+            observation = robot.get_observation()
+            observation_frame = teleoperate_so101.build_dataset_frame(
+            teleoperate_so101.dataset_features, observation, prefix="observation"
+            )
+            print("Observation frame:", observation_frame.keys())
+            action_values_from_groot = groot_eval_lerobot.eval(observation_frame)
+            #action_from_groot = {key: action_values_from_groot[0][i].item() for i, key in enumerate(robot.action_features)}
+            #print("Action from Groot values:", action_values_from_groot[0])
+
+            
+            print("Action values:", action_values_from_groot[0])
+            
+            robot.send_action(action_values_from_groot[0])
+
+            loop_time = time.perf_counter() - start
+            print(f"Policry running at action at {loop_time:.2f}s")
+
+            if duration and time.perf_counter() - start >= duration:
+                break
+            time.sleep(1/10)
+
+   
+        
+
+        
+        #action = {'shoulder_pan.pos': 100, 
+        #    'shoulder_lift.pos': -99, 
+        #   'elbow_flex.pos': 99, 
+        #    'wrist_flex.pos': 94, 
+        #    'wrist_roll.pos': 0.3, 
+        #    'gripper.pos': 0.1}
+
+        
+        #robot.send_action(action)
+        observation = robot.get_observation()
+        image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])
+        image_artifact = types.Part(
+            inline_data=types.Blob(
+                mime_type="image/png",
+                data=image_bytes
+            )
+        )
+        version = await tool_context.save_artifact(filename="inventory.png", artifact=image_artifact)
+        print(f"INFO: Inventory image saved with version: {version}")
+        return {"status": "success", "action_values": "dummy"}
+   else:
+        return {"status": "error", "error_message": "No policy loaded."}
+
         
    
 
-def handoff_to_teleoperator(item: str) -> dict:
+async def handoff_to_teleoperator(item: str, tool_context: ToolContext) -> dict:
     """If Robot is unbale to pick up the item, this will handoff the customer requests to leleoperator to control robot and pick the item.
 
     Args:
@@ -118,13 +203,13 @@ def handoff_to_teleoperator(item: str) -> dict:
     """
     # send commadn to robot to pick item.
     fps = 30
-    duration = 30 # Frames per second for manual teleoperation
+    duration = 15 # Frames per second for manual teleoperation
     print("Entering manual teleop loop...")
     start = time.perf_counter()
     while True:
         action = teleop_device.get_action()
         print(f"[MANUAL] Action received: {action}")
-        #robot.send_action(action)
+        robot.send_action(action)
 
         loop_time = time.perf_counter() - start
         print(f"[MANUAL] Sent zero action at {loop_time:.2f}s")
@@ -132,6 +217,16 @@ def handoff_to_teleoperator(item: str) -> dict:
         if duration and time.perf_counter() - start >= duration:
             break
     time.sleep(1 / fps)
+    observation = robot.get_observation()
+    image_bytes = teleoperate_so101.image_obs_to_png_bytes(observation["head"])
+    image_artifact = types.Part(
+        inline_data=types.Blob(
+            mime_type="image/png",
+            data=image_bytes
+        )
+    )
+    version = await tool_context.save_artifact(filename="inventory.png", artifact=image_artifact)
+    print(f"INFO: Inventory image saved with version: {version}")
 
     return {"status": "success", "action_values": "dummy"}
     
@@ -156,10 +251,10 @@ root_agent = Agent(
     ),
     instruction=(
         "You are a helpful agent who acts as shop keeper for Robot managed store, you enquire customer what items he need, and ask robot to pack the items user asked. To get currently avilable item, ask robot 'get_current_inventory', 'pick_item' with the item ID to pick functions." \
-        "If robot is unable to pick the item, you can handoff the request to teleoperator by calling 'handoff_to_teleoperator' with the item ID. If you are not sure about the item, ask customer for more details." \
+        "If robot is unable to pick the item, then ask groot robot using 'ask_groot_to_pick_item' tool, if that also fails, you can handoff the request to teleoperator by calling 'handoff_to_teleoperator' with the item ID. If you are not sure about the item, ask customer for more details." \
         "If you are not sure about the item, ask customer for more details. If you are not able to understand the request, ask customer to rephrase the request."
     ),
-    tools=[get_current_inventory, pick_item, handoff_to_teleoperator],
+    tools=[get_current_inventory, pick_item, ask_groot_to_pick_item, handoff_to_teleoperator],
 )
 
 runner = Runner(

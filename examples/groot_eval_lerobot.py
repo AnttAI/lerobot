@@ -52,7 +52,8 @@ import rerun as rr
 # User can just move this single python class method gr00t/eval/service.py
 # to their code or do the following line below
 # sys.path.append(os.path.expanduser("~/Isaac-GR00T/gr00t/eval/"))
-from service import ExternalRobotInferenceClient
+#from service import ExternalRobotInferenceClient
+from examples.service import ExternalRobotInferenceClient
 
 # from gr00t.eval.service import ExternalRobotInferenceClient
 
@@ -85,12 +86,13 @@ class Gr00tRobotInferenceClient:
 
     def get_action(self, observation_dict, lang: str):
         # first add the images
-        obs_dict = {f"video.{key}": observation_dict[key] for key in self.camera_keys}
-
+        #obs_dict = {f"video.{key}": observation_dict[key] for key in self.camera_keys}
+        obs_dict = {}
+        obs_dict["video.webcam"] = observation_dict["observation.images.head"]
         
 
         # Make all single float value of dict[str, float] state into a single array
-        state = np.array([observation_dict[k] for k in self.robot_state_keys])
+        state = observation_dict["observation.state"]                    #np.array([observation_dict[k] for k in self.robot_state_keys])
         obs_dict["state.single_arm"] = state[:5].astype(np.float64)
         obs_dict["state.gripper"] = state[5:6].astype(np.float64)
         obs_dict["annotation.human.task_description"] = lang
@@ -143,7 +145,7 @@ class Gr00tRobotInferenceClient:
 
 
 
-def eval():
+def eval(observation_dict: dict ):
     
     
     action_horizon = 8
@@ -162,27 +164,18 @@ def eval():
 
     # Step 2: Initialize the policy
     policy = Gr00tRobotInferenceClient(
-        host='0.0.0.0',
+        host='192.168.17.87',
         port='5555',
         camera_keys=camera_keys,
         robot_state_keys=robot_state_keys,
     )
     
     # Step 3: Run the Eval Loop
-    i =0
-    while i < 50:
-        # get the realtime image
-        observation_dict = robot.get_observation()
-        print("observation_dict", observation_dict.keys())
-        action_chunk = policy.get_action(observation_dict, language_instruction)
+    
+    action_chunk = policy.get_action(observation_dict, language_instruction)
+    return action_chunk
         
         
-        for i in range(action_horizon):
-            action_dict = action_chunk[i]
-            print("action_dict", action_dict.keys())
-            #robot.send_action(action_dict)
-            time.sleep(0.02)  # Implicitly wait for the action to be executed
-        i += 1
-
+        
 if __name__ == "__main__":
     eval()

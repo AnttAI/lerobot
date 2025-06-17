@@ -14,7 +14,6 @@ from pathlib import Path
 from lerobot.common.utils.utils import get_safe_torch_device
 from lerobot.common.robots.so101_follower import SO101Follower, SO101FollowerConfig
 from lerobot.common.teleoperators.teleoperator import Teleoperator
-from lerobot.common.teleoperators.keyboard.teleop_keyboard import KeyboardTeleop, KeyboardTeleopConfig
 from lerobot.common.policies.factory import make_policy
 from lerobot.common.policies.pretrained import PreTrainedPolicy
 from lerobot.common.datasets.utils import build_dataset_frame, hw_to_dataset_features
@@ -22,6 +21,7 @@ from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.common.cameras.opencv.configuration_opencv import OpenCVCameraConfig
+from lerobot.common.teleoperators.so101_leader import SO101LeaderConfig, SO101Leader
 from lerobot.common.utils.utils import (
     get_safe_torch_device,
     init_logging,
@@ -69,38 +69,39 @@ camera_config = {
 }
 
 robot_config = SO101FollowerConfig(
-    port="/dev/ttyACM0",
+    port="/dev/ttyACM1",
     id="blue_follower_arm",
     cameras=camera_config
 )
 
-teleop_keyboard_config = KeyboardTeleopConfig(
-    id="my_laptop_keyboard",
+teleop_config = SO101LeaderConfig(
+    port="/dev/ttyACM0",
+    id="blue_leader_arm",
 )
 
-single_task = "pick the wodden block"
+single_task = "pick the wooden block and put it in the plate"
 
-policy_path = "/home/jony/Downloads/last/pretrained_model/"
+policy_path = "/home/jony/Downloads/act_so101_test_new2/checkpoints/last/pretrained_model"
 policy_config = PreTrainedConfig.from_pretrained(policy_path)
 print("Policy config:", pformat(asdict(policy_config)))
 
-ds_meta = LeRobotDatasetMetadata("anttai/act_so101_test52", root=Path("/home/jony/Downloads/lerobot/anttai/act_so101_test52"))
+ds_meta = LeRobotDatasetMetadata("AnttAI/record-test3")     #, root=Path("/home/jony/Downloads/lerobot/anttai/act_so101_test52")
 print("Dataset metadata:", ds_meta)
 policy = make_policy(policy_config, ds_meta)
 policy.reset()
 robot = SO101Follower(robot_config)
-telep_keyboard = KeyboardTeleop(teleop_keyboard_config)
+
 robot.connect()
-telep_keyboard.connect()
-i =0
 
 action_features = hw_to_dataset_features(robot.action_features, "action", True)
 obs_features = hw_to_dataset_features(robot.observation_features, "observation", True)
 dataset_features = {**action_features, **obs_features}
 
-
 # Optional inventory summary output for agent use
-        
+     
+teleop_device = SO101Leader(teleop_config)
+teleop_device.connect()
+   
 
 
 
