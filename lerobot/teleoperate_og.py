@@ -19,24 +19,15 @@ Example:
 
 ```shell
 python -m lerobot.teleoperate \
-    --robot.type=tara \
-    --robot.left_port=/dev/ttyACM3 \
-    --robot.right_port=/dev/ttyACM2 \
-    --robot.id=followers_arm \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
-    --teleop.type=tara_leader \
-    --teleop.left_port=/dev/ttyACM0 \
-    --teleop.right_port=/dev/ttyACM1 \
-    --teleop.id=leader_arms \
+    --robot.type=so101_follower \
+    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}}" \
+    --robot.id=black \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/tty.usbmodem58760431551 \
+    --teleop.id=blue \
     --display_data=true
 ```
-
-
-python -m lerobot.teleoperate \
-    --robot.type=tarabase \
-    --robot.port=/dev/ttyACM3 \
-    --teleop.type=gamepad \
-    --display_data=true
 """
 
 import logging
@@ -67,18 +58,13 @@ from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import init_logging, move_cursor_up
 from lerobot.common.utils.visualization_utils import _init_rerun
 
-from .common.teleoperators import gamepad, gamepadtara, koch_leader, so100_leader, so101_leader  # noqa: F401
+from .common.teleoperators import gamepad, koch_leader, so100_leader, so101_leader  # noqa: F401
 
 
 @dataclass
 class TeleoperateConfig:
     teleop: TeleoperatorConfig
     robot: RobotConfig
-    # New: support left/right IDs for dual-arm
-    robot_left_id: str | None = None
-    robot_right_id: str | None = None
-    teleop_left_id: str | None = None
-    teleop_right_id: str | None = None
     # Limit the maximum frames per second.
     fps: int = 60
     teleop_time_s: float | None = None
@@ -94,23 +80,14 @@ def teleop_loop(
     while True:
         loop_start = time.perf_counter()
         action = teleop.get_action()
-        
-        # Send action to robot and get the actual motor commands that were sent
-        actual_motor_commands = robot.send_action(action)
-        
         if display_data:
-            # Get current robot state (actual motor RPM values)
             observation = robot.get_observation()
-            
-            # Log the actual motor RPM values from the robot
             for obs, val in observation.items():
                 if isinstance(val, float):
                     rr.log(f"observation_{obs}", rr.Scalar(val))
                 elif isinstance(val, np.ndarray):
                     rr.log(f"observation_{obs}", rr.Image(val), static=True)
-            
-            # Log the actual motor commands sent to the robot (not gamepad values)
-            for act, val in actual_motor_commands.items():
+            for act, val in action.items():
                 if isinstance(val, float):
                     rr.log(f"action_{act}", rr.Scalar(val))
 
@@ -122,14 +99,14 @@ def teleop_loop(
 
         print("\n" + "-" * (display_len + 10))
         print(f"{'NAME':<{display_len}} | {'NORM':>7}")
-        for motor, value in actual_motor_commands.items():
+        for motor, value in action.items():
             print(f"{motor:<{display_len}} | {value:>7.2f}")
         print(f"\ntime: {loop_s * 1e3:.2f}ms ({1 / loop_s:.0f} Hz)")
 
         if duration is not None and time.perf_counter() - start >= duration:
             return
 
-        move_cursor_up(len(actual_motor_commands) + 5)
+        move_cursor_up(len(action) + 5)
 
 
 @draccus.wrap()
@@ -138,16 +115,6 @@ def teleoperate(cfg: TeleoperateConfig):
     logging.info(pformat(asdict(cfg)))
     if cfg.display_data:
         _init_rerun(session_name="teleoperation")
-
-    # Inject left/right IDs into robot/teleop config if provided
-    if cfg.robot_left_id is not None:
-        setattr(cfg.robot, "left_id", cfg.robot_left_id)
-    if cfg.robot_right_id is not None:
-        setattr(cfg.robot, "right_id", cfg.robot_right_id)
-    if cfg.teleop_left_id is not None:
-        setattr(cfg.teleop, "left_id", cfg.teleop_left_id)
-    if cfg.teleop_right_id is not None:
-        setattr(cfg.teleop, "right_id", cfg.teleop_right_id)
 
     teleop = make_teleoperator_from_config(cfg.teleop)
     robot = make_robot_from_config(cfg.robot)

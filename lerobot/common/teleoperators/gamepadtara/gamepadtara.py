@@ -30,8 +30,8 @@ class GamepadTara(Teleoperator):
     """
     Teleoperator class to control TaraBase robots using gamepad inputs.
     
-    This maps gamepad inputs to linear_x (forward/backward) and linear_y (turning)
-    commands appropriate for the TaraBase robot.
+    This maps gamepad inputs directly to left_wheel and right_wheel speeds
+    for differential drive control of the TaraBase robot.
     """
 
     config_class = GamepadTaraConfig
@@ -49,11 +49,10 @@ class GamepadTara(Teleoperator):
         """Define the action space for the TaraBase teleoperator."""
         return {
             "dtype": "float32",
-            "shape": (3,),
+            "shape": (2,),
             "names": {
-                "linear_x": 0,  # Forward/backward motion
-                "linear_y": 1,  # Left/right turning
-                "angular_z": 2,  # Not used but kept for compatibility
+                "left_wheel": 0,   # Left wheel motor speed
+                "right_wheel": 1,  # Right wheel motor speed
             },
         }
 
@@ -88,28 +87,53 @@ class GamepadTara(Teleoperator):
         return value
 
     def get_action(self) -> dict[str, Any]:
-        """Get the current gamepad inputs and convert them to TaraBase commands."""
+        """Get the current gamepad inputs and convert them to TaraBase wheel commands."""
         if not self.is_connected():
             logger.warning("Gamepad not connected, returning zero action")
-            return {"linear_x": 0.0, "linear_y": 0.0, "angular_z": 0.0}
+            return {"left_wheel": 0.0, "right_wheel": 0.0}
 
         # Update the controller to get fresh inputs
         self.gamepad.update()
 
         # Get movement deltas from the controller
         # For TaraBase, we use:
+        # - Left stick Y-axis (delta_x) for forward/backward motion
+        # - Left stick X-axis (delta_y) for turning left/right
         
         delta_x, delta_y, _ = self.gamepad.get_deltas()
         
         # Apply deadzone to get normalized values (-1.0 to 1.0)
-        linear_x = self._apply_deadzone(delta_x, self.config.deadzone)
-        linear_y = self._apply_deadzone(delta_y, self.config.deadzone)
+        forward_backward = self._apply_deadzone(delta_x, self.config.deadzone)
+        left_right = self._apply_deadzone(delta_y, self.config.deadzone)
         
-        # Create action dictionary for TaraBase
+        # Convert gamepad inputs to normalized differential drive wheel commands
+        # The robot will handle the actual speed scaling
+        
+        left_wheel = 0.0
+        right_wheel = 0.0
+        
+        # Handle forward/backward movement
+        if abs(forward_backward) > 0.1:
+            if forward_backward > 0:  # Forward
+                left_wheel = -forward_backward  # Normalized value
+                right_wheel = forward_backward   # Normalized value
+            else:  # Backward
+                left_wheel = -forward_backward   # Normalized value
+                right_wheel = forward_backward   # Normalized value
+        
+        # Handle turning (overrides forward/backward if both are active)
+        if abs(left_right) > 0.1:
+            if left_right > 0:  # Turn left
+                left_wheel = -left_right   # Normalized value
+                right_wheel = -left_right  # Normalized value
+            else:  # Turn right
+                left_wheel = -left_right   # Normalized value
+                right_wheel = -left_right  # Normalized value
+        
+        # Create action dictionary for TaraBase (normalized values -1.0 to 1.0)
         action_dict = {
-            "linear_x": linear_x,  # Forward/backward from left stick Y-axis
-            "linear_y": linear_y,  # Turning from left stick X-axis
-            "angular_z": 0.0,      # Not used but included for compatibility
+            "left_wheel": left_wheel,
+            "right_wheel": right_wheel,
         }
         
         return action_dict
