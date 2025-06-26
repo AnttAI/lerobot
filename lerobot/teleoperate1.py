@@ -19,28 +19,40 @@ Example:
 
 ```shell
 python -m lerobot.teleoperate \
-    --robot.type=tara \
-    --robot.left_port=/dev/ttyACM3 \
-    --robot.right_port=/dev/ttyACM2 \
-    --robot.id=followers_arm \
-    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 640, height: 480, fps: 30}}" \
-    --teleop.type=tara_leader \
-    --teleop.left_port=/dev/ttyACM0 \
-    --teleop.right_port=/dev/ttyACM1 \
-    --teleop.id=leader_arms \
+    --robot.type=so101_follower \
+    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 30}}" \
+    --robot.id=black \
+    --teleop.type=so101_leader \
+    --teleop.port=/dev/tty.usbmodem58760431551 \
+    --teleop.id=blue \
     --display_data=true
 ```
 
+Example2:
 
+```shell
 python -m lerobot.teleoperate \
-    --robot.type=tarabase \
-    --robot.port=/dev/ttyACM3 \
-    --teleop.type=gamepad \
+    --robot1.type=so101_follower \
+    --robot1.port=/dev/ttyACM2 \
+    --robot1.id=white_follower_arm \
+    --robot2.type=so101_follower \
+    --robot2.port=/dev/ttyACM3 \
+    --robot2.id=blue_follower_arm \
+    --robot.cameras="{ front: {type: opencv, index_or_path: /dev/video2, width: 640, height: 480, fps: 30}}"\
+    --teleop1.type=so101_leader \
+    --teleop1.port=/dev/ttyACM0 \
+    --teleop1.id=white_leader_arm \
+    --teleop2.type=so101_leader \
+    --teleop2.port=/dev/ttyACM1 \
+    --teleop2.id=blue_leader_arm \
     --display_data=true
+```
 """
 
 import logging
 import time
+import threading
 from dataclasses import asdict, dataclass
 from pprint import pformat
 
@@ -67,22 +79,17 @@ from lerobot.common.utils.robot_utils import busy_wait
 from lerobot.common.utils.utils import init_logging, move_cursor_up
 from lerobot.common.utils.visualization_utils import _init_rerun
 
-from .common.teleoperators import gamepad, gamepadtara, koch_leader, so100_leader, so101_leader  # noqa: F401
+from .common.teleoperators import gamepad, koch_leader, so100_leader, so101_leader  # noqa: F401
 
 
 @dataclass
 class TeleoperateConfig:
-    teleop: TeleoperatorConfig
-    robot: RobotConfig
-    # New: support left/right IDs for dual-arm
-    robot_left_id: str | None = None
-    robot_right_id: str | None = None
-    teleop_left_id: str | None = None
-    teleop_right_id: str | None = None
-    # Limit the maximum frames per second.
+    teleop1: TeleoperatorConfig
+    robot1: RobotConfig
+    teleop2: TeleoperatorConfig
+    robot2: RobotConfig
     fps: int = 60
     teleop_time_s: float | None = None
-    # Display all cameras on screen
     display_data: bool = False
 
 
@@ -122,39 +129,55 @@ def teleop_loop(
 
         move_cursor_up(len(action) + 5)
 
+def teleop_dual_loop(cfg: TeleoperateConfig):
+    robot1 = make_robot_from_config(cfg.robot1)
+    robot2 = make_robot_from_config(cfg.robot2)
+    teleop1 = make_teleoperator_from_config(cfg.teleop1)
+    teleop2 = make_teleoperator_from_config(cfg.teleop2)
+
+    teleop1.connect()
+    teleop2.connect()
+    robot1.connect()
+    robot2.connect()
+
+    thread1 = threading.Thread(
+        target=teleop_loop,
+        args=(teleop1, robot1, cfg.fps, cfg.display_data, cfg.teleop_time_s),
+        daemon=True,
+    )
+
+    thread2 = threading.Thread(
+        target=teleop_loop,
+        args=(teleop2, robot2, cfg.fps, cfg.display_data, cfg.teleop_time_s),
+        daemon=True,
+    )
+
+    thread1.start()
+    thread2.start()
+
+    try:
+        while thread1.is_alive() or thread2.is_alive():
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("Shutting down...")
+    finally:
+        teleop1.disconnect()
+        teleop2.disconnect()
+        robot1.disconnect()
+        robot2.disconnect()
+        if cfg.display_data:
+            rr.rerun_shutdown()
+
+
 
 @draccus.wrap()
 def teleoperate(cfg: TeleoperateConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
     if cfg.display_data:
-        _init_rerun(session_name="teleoperation")
+        _init_rerun(session_name="dual_teleoperation")
 
-    # Inject left/right IDs into robot/teleop config if provided
-    if cfg.robot_left_id is not None:
-        setattr(cfg.robot, "left_id", cfg.robot_left_id)
-    if cfg.robot_right_id is not None:
-        setattr(cfg.robot, "right_id", cfg.robot_right_id)
-    if cfg.teleop_left_id is not None:
-        setattr(cfg.teleop, "left_id", cfg.teleop_left_id)
-    if cfg.teleop_right_id is not None:
-        setattr(cfg.teleop, "right_id", cfg.teleop_right_id)
-
-    teleop = make_teleoperator_from_config(cfg.teleop)
-    robot = make_robot_from_config(cfg.robot)
-
-    teleop.connect()
-    robot.connect()
-
-    try:
-        teleop_loop(teleop, robot, cfg.fps, display_data=cfg.display_data, duration=cfg.teleop_time_s)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if cfg.display_data:
-            rr.rerun_shutdown()
-        teleop.disconnect()
-        robot.disconnect()
+    teleop_dual_loop(cfg)
 
 
 if __name__ == "__main__":

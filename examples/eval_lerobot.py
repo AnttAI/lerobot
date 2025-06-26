@@ -42,18 +42,36 @@ python -m lerobot.replay \
 ```
 """
 
+import logging
 import time
-import numpy as np
+from dataclasses import asdict, dataclass
+from pprint import pformat
 
-import rerun as rr
+import draccus
+import matplotlib.pyplot as plt
+import numpy as np
+from lerobot.common.cameras.opencv.configuration_opencv import (  # noqa: F401
+    OpenCVCameraConfig,
+)
+from lerobot.common.robots import (  # noqa: F401
+    Robot,
+    RobotConfig,
+    koch_follower,
+    make_robot_from_config,
+    so100_follower,
+    so101_follower,
+)
+from lerobot.common.utils.utils import (
+    init_logging,
+    log_say,
+)
 
 # NOTE:
 # Sometimes we would like to abstract different env, or run this on a separate machine
 # User can just move this single python class method gr00t/eval/service.py
 # to their code or do the following line below
 # sys.path.append(os.path.expanduser("~/Isaac-GR00T/gr00t/eval/"))
-#from service import ExternalRobotInferenceClient
-from examples.service import ExternalRobotInferenceClient
+from service import ExternalRobotInferenceClient
 
 # from gr00t.eval.service import ExternalRobotInferenceClient
 
@@ -73,7 +91,7 @@ class Gr00tRobotInferenceClient:
         port=5555,
         camera_keys=[],
         robot_state_keys=[],
-        show_images=False,
+        show_images=True,
     ):
         self.policy = ExternalRobotInferenceClient(host=host, port=port)
         self.camera_keys = camera_keys
@@ -86,13 +104,14 @@ class Gr00tRobotInferenceClient:
 
     def get_action(self, observation_dict, lang: str):
         # first add the images
-        #obs_dict = {f"video.{key}": observation_dict[key] for key in self.camera_keys}
-        obs_dict = {}
-        obs_dict["video.webcam"] = observation_dict["observation.images.head"]
-        
+        obs_dict = {f"video.{key}": observation_dict[key] for key in self.camera_keys}
+        print("show_images is:", self.show_images)
+        # show images
+        if self.show_images:
+            view_img(obs_dict)
 
         # Make all single float value of dict[str, float] state into a single array
-        state = observation_dict["observation.state"]                    #np.array([observation_dict[k] for k in self.robot_state_keys])
+        state = np.array([observation_dict[k] for k in self.robot_state_keys])
         obs_dict["state.single_arm"] = state[:5].astype(np.float64)
         obs_dict["state.gripper"] = state[5:6].astype(np.float64)
         obs_dict["annotation.human.task_description"] = lang
@@ -144,38 +163,86 @@ class Gr00tRobotInferenceClient:
 #################################################################################
 
 
+def view_img(img, overlay_img=None):
+    """
+    This is a matplotlib viewer since cv2.imshow can be flaky in lerobot env
+    """
+    
+    if isinstance(img, dict):
+        # stack the images horizontally
+        img = np.concatenate([img[k] for k in img], axis=1)
 
-def eval(observation_dict: dict ):
-    
-    
-    action_horizon = 8
+    plt.imshow(img)
+    plt.title("Camera View")
+    plt.axis("off")
+    plt.pause(0.001)  # Non-blocking show
+    plt.clf()  # Clear the figure for the next frame
+
+
+def print_yellow(text):
+    print("\033[93m {}\033[00m".format(text))
+
+
+@dataclass
+class EvalConfig:
+    robot: RobotConfig  # the robot to use
+    policy_host: str = "localhost"  # host of the gr00t server
+    policy_port: int = 5555  # port of the gr00t server
+    action_horizon: int = 16  # number of actions to execute from the action chunk
+    lang_instruction: str = "Grab pens and place into pen holder."
+    play_sounds: bool = False  # whether to play sounds
+    timeout: int = 60  # timeout in seconds
+    show_images: bool = True  # whether to show images
+
+
+@draccus.wrap()
+def eval(cfg: EvalConfig):
+    init_logging()
+    logging.info(pformat(asdict(cfg)))
+
+    # Step 1: Initialize the robot
+    robot = make_robot_from_config(cfg.robot)
+    robot.connect()
 
     # get camera keys from RobotConfig
-    camera_keys = ['webcam']
+    camera_keys = list(cfg.robot.cameras.keys())
     print("camera_keys: ", camera_keys)
 
-   
-    language_instruction = 'Pick the wooden block and put in the plate.'
+    log_say("Initializing robot", cfg.play_sounds, blocking=True)
+
+    language_instruction = cfg.lang_instruction
 
     # NOTE: for so100/so101, this should be:
     # ['shoulder_pan.pos', 'shoulder_lift.pos', 'elbow_flex.pos', 'wrist_flex.pos', 'wrist_roll.pos', 'gripper.pos']
-    robot_state_keys = ['shoulder_pan.pos', 'shoulder_lift.pos', 'elbow_flex.pos', 'wrist_flex.pos', 'wrist_roll.pos', 'gripper.pos']
+    robot_state_keys = list(robot._motors_ft.keys())
     print("robot_state_keys: ", robot_state_keys)
 
     # Step 2: Initialize the policy
     policy = Gr00tRobotInferenceClient(
-        host='192.168.31.178',
-        port='5555',
+        host=cfg.policy_host,
+        port=cfg.policy_port,
         camera_keys=camera_keys,
         robot_state_keys=robot_state_keys,
     )
-    
+    log_say(
+        "Initializing policy client with language instruction: " + language_instruction,
+        cfg.play_sounds,
+        blocking=True,
+    )
+
     # Step 3: Run the Eval Loop
-    
-    action_chunk = policy.get_action(observation_dict, language_instruction)
-    return action_chunk
-        
-        
-        
+    while True:
+        # get the realtime image
+        observation_dict = robot.get_observation()
+        print("observation_dict", observation_dict.keys(), " language_instruction:", language_instruction)
+        action_chunk = policy.get_action(observation_dict, language_instruction)
+
+        for i in range(cfg.action_horizon):
+            action_dict = action_chunk[i]
+            print("action_dict", action_dict.values())
+            robot.send_action(action_dict)
+            time.sleep(0.02)  # Implicitly wait for the action to be executed
+
+
 if __name__ == "__main__":
     eval()

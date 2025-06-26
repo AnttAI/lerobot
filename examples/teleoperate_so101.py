@@ -65,24 +65,25 @@ def image_obs_to_png_bytes(image_obs):
 
 
 camera_config = {
-    "head": OpenCVCameraConfig(index_or_path='/dev/video2', width=640, height=480, fps=30)
+    "head": OpenCVCameraConfig(index_or_path='/dev/video0', width=640, height=480, fps=30)
 }
 
 robot_config = SO101FollowerConfig(
-    port="/dev/ttyACM1",
-    id="blue_follower_arm",
+    port="/dev/ttyACM0",
+    id="white_follower_arm",
     cameras=camera_config
 )
 
 teleop_config = SO101LeaderConfig(
-    port="/dev/ttyACM0",
-    id="blue_leader_arm",
+    port="/dev/ttyACM1",
+    id="white_leader_arm",
 )
 
 single_task = "pick the wooden block and put it in the plate"
 
 policy_path = "/home/jony/Downloads/act_so101_test_new2/checkpoints/last/pretrained_model"
 policy_config = PreTrainedConfig.from_pretrained(policy_path)
+policy_config.pretrained_path = policy_path
 print("Policy config:", pformat(asdict(policy_config)))
 
 ds_meta = LeRobotDatasetMetadata("AnttAI/record-test3")     #, root=Path("/home/jony/Downloads/lerobot/anttai/act_so101_test52")
@@ -100,7 +101,7 @@ dataset_features = {**action_features, **obs_features}
 # Optional inventory summary output for agent use
      
 teleop_device = SO101Leader(teleop_config)
-teleop_device.connect()
+#teleop_device.connect()
    
 
 

@@ -5,6 +5,7 @@ import io
 import sys
 import torch
 import numpy as np
+import rerun as rr
 from PIL import Image
 import google.genai.types as types
 from google.adk.agents import Agent
@@ -20,6 +21,15 @@ from lerobot.common.utils.utils import (
     get_safe_torch_device,)
 from lerobot.common.utils.control_utils import predict_action
 from examples import groot_eval_lerobot
+from lerobot.common.utils.visualization_utils import _init_rerun
+
+
+# Set to True to enable Rerun logging, or False to disable
+display_data = True
+
+if display_data:
+    _init_rerun(session_name="robot_agent")
+
 
 def cleanup_and_exit(signum=None, frame=None):
     print("\n[INFO] Disconnecting robot before exit...")
@@ -40,6 +50,7 @@ def get_current_inventory() -> dict:
     """
     try:
         observation = robot.get_observation()
+        #print("get_current_inventory Observation received:", observation)
 
         if "head" not in observation:
             return {"status": "error", "error_message": "No head camera image found."}
@@ -65,14 +76,14 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
    
    if policy:
         
-        duration = 15 
+        duration = 30
         start = time.perf_counter()
         while True:
             observation = robot.get_observation()
             observation_frame = teleoperate_so101.build_dataset_frame(
             teleoperate_so101.dataset_features, observation, prefix="observation"
             )
-            print("Observation frame:", observation_frame.keys())
+            print("Observation frame:", observation_frame.keys)
             #action_values_from_groot = groot_eval_lerobot.eval(observation_frame)
             #action_from_groot = {key: action_values_from_groot[0][i].item() for i, key in enumerate(robot.action_features)}
             #print("Action from Groot values:", action_values_from_groot[0])
@@ -88,10 +99,21 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
             print("Action values:", action_values)
             action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
             print("Action values: sent to robot", action)
-            
-            
-            
 
+            # --- Rerun logging ---
+            if display_data:
+                for obs, val in observation.items():
+                    if isinstance(val, float):
+                        rr.log(f"observation.{obs}", rr.Scalar(val))
+                    elif isinstance(val, np.ndarray):
+                        # Only log as image if shape and dtype are valid
+                        if val.ndim in (2, 3) and val.dtype in (np.uint8, np.float32):
+                            rr.log(f"observation.{obs}", rr.Image(val), static=True)
+                for act, val in action.items():
+                    if isinstance(val, float):
+                        rr.log(f"action.{act}", rr.Scalar(val))
+            # --- End Rerun logging ---
+                        
             #action_array = action_values.cpu().numpy()
         
             #print(action_array)
@@ -103,7 +125,7 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
 
             if duration and time.perf_counter() - start >= duration:
                 break
-            time.sleep(1/10)
+            time.sleep(1/30)
 
    
         
@@ -128,6 +150,7 @@ async def pick_item(item: str, tool_context: ToolContext) -> dict:
         )
         version = await tool_context.save_artifact(filename="inventory.png", artifact=image_artifact)
         print(f"INFO: Inventory image saved with version: {version}")
+        move_robot_to_home(robot) 
         return {"status": "success", "action_values": "dummy"}
    else:
         return {"status": "error", "error_message": "No policy loaded."}
@@ -138,7 +161,7 @@ async def ask_groot_to_pick_item(item: str, tool_context: ToolContext) -> dict:
    
    if policy:
         
-        duration = 15 
+        duration = 30
         start = time.perf_counter()
         while True:
             observation = robot.get_observation()
@@ -150,11 +173,13 @@ async def ask_groot_to_pick_item(item: str, tool_context: ToolContext) -> dict:
             #action_from_groot = {key: action_values_from_groot[0][i].item() for i, key in enumerate(robot.action_features)}
             #print("Action from Groot values:", action_values_from_groot[0])
 
-            
-            print("Action values:", action_values_from_groot[0])
-            
-            robot.send_action(action_values_from_groot[0])
+            for i in range(8):
+                action_dict = action_values_from_groot[i]
+                print("action_dict", action_dict.values())
+                robot.send_action(action_dict)
+                time.sleep(0.02)
 
+            
             loop_time = time.perf_counter() - start
             print(f"Policry running at action at {loop_time:.2f}s")
 
@@ -185,6 +210,7 @@ async def ask_groot_to_pick_item(item: str, tool_context: ToolContext) -> dict:
         )
         version = await tool_context.save_artifact(filename="inventory.png", artifact=image_artifact)
         print(f"INFO: Inventory image saved with version: {version}")
+        move_robot_to_home(robot) 
         return {"status": "success", "action_values": "dummy"}
    else:
         return {"status": "error", "error_message": "No policy loaded."}
@@ -263,3 +289,27 @@ runner = Runner(
     session_service=session_service,
     artifact_service=artifact_service # Provide the service instance here
 )
+
+def move_robot_to_home(robot):
+    """
+    Sends the robot to its home position.
+    Adjust the values below to match your robot's home configuration.
+    """
+    for motor in robot.bus.motors:
+        robot.bus.write("Acceleration", motor, 20)
+    home_action = {
+        'shoulder_pan.pos': 0,           
+        'shoulder_lift.pos': -98,
+        'elbow_flex.pos': 98,
+        'wrist_flex.pos': 75,
+        'wrist_roll.pos': 0.3,
+        'gripper.pos': 0.1
+    }
+    print("Moving robot to home position...")
+    robot.send_action(home_action)
+    
+    # Optionally, wait for the robot to reach home
+    time.sleep(2)
+    robot.bus.disable_torque()
+    
+    print("Robot is at home position.")

@@ -33,6 +33,10 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .so101_leader import SO101Leader
 
         return SO101Leader(config)
+    elif config.type == "tara_leader":
+        from .tara_leader import TaraLeader
+
+        return TaraLeader(config)
     elif config.type == "stretch3":
         from .stretch3_gamepad import Stretch3GamePad
 
@@ -49,6 +53,10 @@ def make_teleoperator_from_config(config: TeleoperatorConfig) -> Teleoperator:
         from .gamepad.teleop_gamepad import GamepadTeleop
 
         return GamepadTeleop(config)
+    elif config.type == "gamepadtara":
+        from .gamepadtara.gamepadtara import GamepadTara
+
+        return GamepadTara(config)
     elif config.type == "keyboard_ee":
         from .keyboard.teleop_keyboard import KeyboardEndEffectorTeleop
 

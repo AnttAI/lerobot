@@ -191,6 +191,8 @@ def record_loop(
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
 
+        print("Observation frame:", observation_frame)
+        
         if policy is not None:
             action_values = predict_action(
                 observation_frame,
@@ -200,7 +202,9 @@ def record_loop(
                 task=single_task,
                 robot_type=robot.robot_type,
             )
+            print("action_values", action_values)
             action = {key: action_values[i].item() for i, key in enumerate(robot.action_features)}
+            print("action======", action)
         elif policy is None and teleop is not None:
             action = teleop.get_action()
         else:

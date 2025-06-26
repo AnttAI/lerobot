@@ -69,9 +69,9 @@ class TaraLeader(Teleoperator):
                 "right_shoulder_pan": Motor(1, "sts3215", norm_mode_body),
                 "right_shoulder_lift": Motor(2, "sts3215", norm_mode_body),
                 "right_elbow_flex": Motor(3, "sts3215", norm_mode_body),
-                "right_wrist_flex": Motor(4, "sts3215", norm_mode_body),
-                "right_wrist_roll": Motor(5, "sts3215", norm_mode_body),
-                "right_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
+               #"right_wrist_flex": Motor(4, "sts3215", norm_mode_body),
+               #"right_wrist_roll": Motor(5, "sts3215", norm_mode_body),
+               #"right_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self._get_arm_calibration("right"),
         )
@@ -129,20 +129,37 @@ class TaraLeader(Teleoperator):
         return self.left_bus.is_calibrated and self.right_bus.is_calibrated
 
     def calibrate(self) -> None:
-        """Calibrate both leader arms sequentially."""
+        """Calibrate both leader arms sequentially and save combined calibration."""
         logger.info(f"\nRunning calibration of {self}")
+        
+        # Initialize empty calibration dictionary
+        self.calibration = {}
         
         # Calibrate left leader arm
         logger.info("Calibrating left leader arm...")
         self._calibrate_arm(self.left_bus, "left")
         
+        # Store left arm calibration temporarily
+        left_calibration = self.calibration.copy()
+        
+        # Clear calibration for right arm
+        self.calibration = {}
+        
         # Calibrate right leader arm
         logger.info("Calibrating right leader arm...")
         self._calibrate_arm(self.right_bus, "right")
         
+        # Store right arm calibration
+        right_calibration = self.calibration.copy()
+        
+        # Combine both calibrations
+        self.calibration = {**left_calibration, **right_calibration}
+        print("leader calibration complete. Saving combined calibration...")#debug purposes
+
         # Save combined calibration
         self._save_calibration()
-        print(f"Calibration saved to {self.calibration_fpath}")
+
+        print(f"Combined calibration saved to {self.calibration_fpath}")
 
     def _calibrate_arm(self, bus: FeetechMotorsBus, arm_name: str) -> None:
         """Calibrate a single leader arm."""
@@ -167,9 +184,9 @@ class TaraLeader(Teleoperator):
             self.calibration[motor] = MotorCalibration(
                 id=m.id,
                 drive_mode=0,
-                homing_offset=homing_offsets[motor.removeprefix(f"{arm_name}_")],
-                range_min=range_mins[motor.removeprefix(f"{arm_name}_")],
-                range_max=range_maxes[motor.removeprefix(f"{arm_name}_")],
+                homing_offset=homing_offsets[motor],
+                range_min=range_mins[motor],
+                range_max=range_maxes[motor],
             )
 
         bus.write_calibration(self._get_arm_calibration(arm_name))
