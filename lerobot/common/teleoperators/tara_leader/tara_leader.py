@@ -69,9 +69,9 @@ class TaraLeader(Teleoperator):
                 "right_shoulder_pan": Motor(1, "sts3215", norm_mode_body),
                 "right_shoulder_lift": Motor(2, "sts3215", norm_mode_body),
                 "right_elbow_flex": Motor(3, "sts3215", norm_mode_body),
-               #"right_wrist_flex": Motor(4, "sts3215", norm_mode_body),
-               #"right_wrist_roll": Motor(5, "sts3215", norm_mode_body),
-               #"right_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
+               "right_wrist_flex": Motor(4, "sts3215", norm_mode_body),
+               "right_wrist_roll": Motor(5, "sts3215", norm_mode_body),
+               "right_gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self._get_arm_calibration("right"),
         )
