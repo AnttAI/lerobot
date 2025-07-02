@@ -47,7 +47,8 @@ class TaraSingleClient:
 def main():
     logging.basicConfig(level=logging.INFO)
     logging.info("Configuring Tara Single leader controller...")
-    # Key difference: Using the SINGLE arm leader config
+
+    # Using the SINGLE arm leader config
     leader_config = TaraLeaderSingleConfig(port="/dev/ttyACM0")
     leader = TaraLeaderSingle(leader_config)
 
@@ -55,26 +56,40 @@ def main():
     leader.connect()
 
     logging.info("Starting Tara Single Client...")
-    client_config = TaraSingleClientConfig(remote_ip="192.168.31.178")  # Replace with robot's IP
+    client_config = TaraSingleClientConfig(remote_ip="192.168.31.125")  # Replace with robot's IP
     client = TaraSingleClient(client_config)
 
-    logging.info("Starting teleoperation loop...")
+    # --- MODIFICATION START ---
+
+    # Variable to store the last action that was sent. Initialize to None.
+    last_sent_action = None
+
+    logging.info("Starting stateful teleoperation loop...")
     try:
         while True:
-            # 1. Get action from the leader arm
-            action = leader.get_action()
+            # 1. Get the current action from the leader arm
+            current_action = leader.get_action()
 
-            # 2. Send action to the host
-            client.zmq_cmd_socket.send_string(json.dumps(action))
+            # 2. Compare the current action with the last one sent
+            if current_action != last_sent_action:
+                
+                # 3. If it has changed, print and send it
+                print(f"Action changed, sending: {current_action}")
+                client.zmq_cmd_socket.send_string(json.dumps(current_action))
 
-            # 3. (Optional) Receive and process observation from the host
+                # 4. Update the last sent action to the current one
+                last_sent_action = current_action
+
+            # 5. (Optional) Receive and process observation from the host
             try:
                 obs_string = client.zmq_observation_socket.recv_string(zmq.NOBLOCK)
-                # Optionally process obs_string here
+                # You can process obs_string here if needed
             except zmq.Again:
                 pass  # No new observation
 
-            time.sleep(0.01)  # Small delay to prevent overwhelming the network
+            time.sleep(0.01)  # The loop still runs fast to feel responsive
+
+    # --- MODIFICATION END ---
 
     except KeyboardInterrupt:
         print("Keyboard interrupt received. Exiting...")
